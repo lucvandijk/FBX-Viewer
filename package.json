@@ -25,6 +25,7 @@
       "**/*",
       "!release/**"
     ],
+    "onNodeModuleFile": "scripts/electron-on-node-module-file.cjs",
     "win": {
       "target": [
         {
