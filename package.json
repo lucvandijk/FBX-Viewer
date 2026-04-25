@@ -1,7 +1,7 @@
 {
-  "name": "FBX-Browser",
+  "name": "fbx-viewer",
   "version": "0.1.0",
-  "description": "FBX Browser – Electron 3D viewer",
+  "description": "FBX Viewer – Electron 3D preview and favorites",
   "author": "Lucvd",
   "main": "main.js",
   "scripts": {
@@ -10,11 +10,14 @@
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux"
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "node scripts/dist-all.cjs"
   },
   "build": {
-    "appId": "com.fbxbrowser.viewer",
-    "productName": "FBX Browser",
+    "appId": "com.fbxviewer.app",
+    "productName": "FBX Viewer",
+    "icon": "images/logo.png",
+    "forceCodeSigning": false,
     "directories": {
       "output": "release"
     },

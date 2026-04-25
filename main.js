@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -27,7 +27,7 @@ function nextUniqueZipEntryName(filePath, used) {
 let thumbCacheDirPrimed = null;
 function getThumbCacheDir() {
   if (!thumbCacheDirPrimed) {
-    thumbCacheDirPrimed = path.join(app.getPath('userData'), 'fbx-thumb-cache');
+    thumbCacheDirPrimed = path.join(app.getPath('userData'), 'fbx-viewer-thumb-cache');
   }
   return thumbCacheDirPrimed;
 }
@@ -59,11 +59,26 @@ function makeThumbCacheKey(canonicalPath, mtimeMs, size) {
     .slice(0, 48);
 }
 
+const APP_ICON = path.join(__dirname, 'images', 'logo.png');
+
+function setAppIconOnDock() {
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      if (fs.existsSync(APP_ICON)) {
+        app.dock.setIcon(nativeImage.createFromPath(APP_ICON));
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
     height: 900,
     backgroundColor: '#1a1b22',
+    icon: fs.existsSync(APP_ICON) ? APP_ICON : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -219,7 +234,7 @@ ipcMain.handle('exportFavoritesToZip', async (event, filePaths) => {
   const win = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow();
   const { canceled, filePath: savePath } = await dialog.showSaveDialog(win || undefined, {
     title: 'Save pinned models as ZIP',
-    defaultPath: 'fbx-favorites.zip',
+    defaultPath: 'fbx-viewer-favorites.zip',
     filters: [{ name: 'ZIP archive', extensions: ['zip'] }]
   });
   if (canceled || !savePath) {
@@ -256,7 +271,8 @@ ipcMain.handle('exportFavoritesToZip', async (event, filePaths) => {
 });
 
 app.whenReady().then(() => {
-  thumbCacheDirPrimed = path.join(app.getPath('userData'), 'fbx-thumb-cache');
+  thumbCacheDirPrimed = path.join(app.getPath('userData'), 'fbx-viewer-thumb-cache');
+  setAppIconOnDock();
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

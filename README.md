@@ -1,6 +1,6 @@
-# FBX Browser
+# FBX Viewer
 
-A small **Electron** desktop app for browsing folders of **FBX** files, previewing them in a **3D viewport**, and collecting models you care about for use elsewhere (for example in a game engine).
+A small **Electron** desktop app for opening folders of **FBX** files, previewing them in a **3D viewport**, and collecting models you care about for use elsewhere (for example in a game engine).
 
 ## Screenshots
 
@@ -60,21 +60,25 @@ Click the **star** on a thumbnail to **pin** a model. Pinned files appear in the
    npm start
    ```
 
+   With **Yarn**: `yarn` then `yarn start`.
+
 ## Build a distributable
 
-After `npm install`, use [electron-builder](https://www.electron.build/) scripts from `package.json`:
+After `npm install` (or `yarn`), use [electron-builder](https://www.electron.build/) via `package.json` scripts. **Yarn** works the same way: `yarn dist`, `yarn dist:win`, `yarn dist:all`, and so on.
 
 | Command | Output |
 |--------|--------|
 | `npm run pack` | Unpacked app under `release/` (quick test) |
 | `npm run dist` | Package for **your current OS** |
-| `npm run dist:win` | Windows installer + portable (x64) |
-| `npm run dist:mac` | macOS DMG + zip (build on macOS) |
-| `npm run dist:linux` | Linux AppImage + deb (build on Linux) |
+| `npm run dist:win` | Windows (NSIS installer + portable, x64) |
+| `npm run dist:mac` | macOS DMG + zip (run on macOS) |
+| `npm run dist:linux` | Linux AppImage + deb (run on Linux) |
+| `npm run dist:all` | **macOS:** Windows + Linux + macOS (see [multi-platform](https://www.electron.build/multi-platform-build)). **Windows:** Windows only (build Linux artifacts on Linux or CI). **Linux:** Windows + Linux (Windows output may need Wine). |
 
-Installers and binaries are written to the `release/` directory.
+Build output goes to the **`release/`** directory.
+
+`package.json` sets **`forceCodeSigning`: false** so local builds are **not** code-signed. For store or signed releases, set up credentials in CI and turn signing on per [electron-builder’s docs](https://www.electron.build/code-signing).
 
 ## Notes
 
-- The viewer loads **Three.js** from the web (unpkg) for the 3D scene; run the app **online** the first time if you need those scripts to download, or ensure your network allows that URL.
 - Pinned paths are **absolute file paths**. If you move or rename files on disk, pins may break until you re-open the folder and pin again.

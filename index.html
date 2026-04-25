@@ -2,17 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://unpkg.com" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FBX Browser</title>
+  <title>FBX Viewer</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <!-- jsm/ loaders use `from 'three'`; without this map, those sub-imports never resolve. -->
+  <!-- jsm/ loaders use `from 'three'`; map to the same version as `dependencies` in package.json. -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.128.0/build/three.module.js"
+      "three": "./node_modules/three/build/three.module.js"
     }
   }
   </script>
@@ -78,6 +78,19 @@
       border-bottom: 1px solid var(--border);
       background: var(--bg);
     }
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 2px;
+    }
+    .app-brand img {
+      width: 32px;
+      height: 32px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .app-brand h1 { margin: 0; }
     .panel-head h1 { font-size: 14px; letter-spacing: 0.04em; color: var(--accent); }
     .panel-sub { color: var(--muted); font-size: 10px; margin-top: 4px; }
     .panel-sub.path-like {
@@ -416,7 +429,10 @@
   <div class="app" id="app">
     <aside class="col-tree" data-col="tree">
       <div class="panel-head">
-        <h1>FBX Browser</h1>
+        <div class="app-brand">
+          <img src="images/logo.png" width="32" height="32" alt="" />
+          <h1>FBX Viewer</h1>
+        </div>
         <button type="button" class="btn btn-primary btn-block" id="btnPickFolder" title="Choose any folder to list FBX files">Open folder…</button>
         <div class="panel-sub path-like" id="treePathHint" title="">No folder open. Use Open folder… to pick a directory.</div>
       </div>
@@ -492,11 +508,34 @@
   </div>
 
   <script type="module">
-    const SCENE_LIGHTS_KEY = "fbxBrowserSceneLightsV1";
-    const SCENE_LIGHT_INTENSITY_KEY = "fbxBrowserLightIntensityV1";
-    const SCENE_LIGHT_POINTS_KEY = "fbxBrowserLightPointsV1";
-    const SCENE_LIGHT_WARMTH_KEY = "fbxBrowserLightWarmthV1";
-    const MODEL_STATS_VIS_KEY = "fbxBrowserModelStatsVisV1";
+    const SCENE_LIGHTS_KEY = "fbxViewerSceneLightsV1";
+    const SCENE_LIGHT_INTENSITY_KEY = "fbxViewerLightIntensityV1";
+    const SCENE_LIGHT_POINTS_KEY = "fbxViewerLightPointsV1";
+    const SCENE_LIGHT_WARMTH_KEY = "fbxViewerLightWarmthV1";
+    const MODEL_STATS_VIS_KEY = "fbxViewerModelStatsVisV1";
+    const COL_WIDTHS_KEY = "fbxViewerColWidths";
+
+    (function migrateFromFbxBrowserStorage() {
+      const pairs = [
+        [SCENE_LIGHTS_KEY, "fbxBrowserSceneLightsV1"],
+        [SCENE_LIGHT_INTENSITY_KEY, "fbxBrowserLightIntensityV1"],
+        [SCENE_LIGHT_POINTS_KEY, "fbxBrowserLightPointsV1"],
+        [SCENE_LIGHT_WARMTH_KEY, "fbxBrowserLightWarmthV1"],
+        [MODEL_STATS_VIS_KEY, "fbxBrowserModelStatsVisV1"],
+        [COL_WIDTHS_KEY, "fbxBrowserColWidths"],
+        ["fbxViewerPinsV1", "fbxBrowserPinsV1"],
+        ["fbxViewerLastSessionV1", "fbxBrowserLastSessionV1"],
+        ["fbxViewerThumbGridMinV1", "fbxBrowserThumbGridMinV1"]
+      ];
+      try {
+        for (const [next, prev] of pairs) {
+          if (localStorage.getItem(next) == null) {
+            const v = localStorage.getItem(prev);
+            if (v != null) localStorage.setItem(next, v);
+          }
+        }
+      } catch (_) { /* ignore */ }
+    })();
 
     const LIGHT_WARMTH_PALETTES = {
       cool: { hemiSky: 0xd8dce4, hemiGround: 0x5c646e, fill: 0x8a9aac, rim: 0xa8b8c8 },
@@ -532,11 +571,14 @@
     let threeLoadPromise = null;
     function getThree() {
       if (!threeLoadPromise) {
-        const base = "https://unpkg.com/three@0.128.0";
         threeLoadPromise = (async () => {
           const THREE = await import("three");
-          const { FBXLoader } = await import(`${base}/examples/jsm/loaders/FBXLoader.js`);
-          const { OrbitControls } = await import(`${base}/examples/jsm/controls/OrbitControls.js`);
+          const { FBXLoader } = await import(
+            "./node_modules/three/examples/jsm/loaders/FBXLoader.js"
+          );
+          const { OrbitControls } = await import(
+            "./node_modules/three/examples/jsm/controls/OrbitControls.js"
+          );
           return { THREE, FBXLoader, OrbitControls };
         })();
       }
@@ -549,9 +591,8 @@
     (function initResize() {
       const cols = { tree: document.querySelector("[data-col=tree]"), thumbs: document.querySelector("[data-col=thumbs]") };
       const state = { tree: 280, thumbs: 380 };
-      const KEY = "fbxBrowserColWidths";
       try {
-        const s = localStorage.getItem(KEY);
+        const s = localStorage.getItem(COL_WIDTHS_KEY);
         if (s) {
           const j = JSON.parse(s);
           if (j.tree) state.tree = j.tree;
@@ -587,7 +628,7 @@
       });
       window.addEventListener("mouseup", () => {
         if (active) {
-          try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+          try { localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(state)); } catch (e) {}
           active.el.classList.remove("active");
           active = null;
         }
@@ -811,8 +852,8 @@
     }
 
     // --- Tree + thumbs state ---
-    const PINS_KEY = "fbxBrowserPinsV1";
-    const SESSION_KEY = "fbxBrowserLastSessionV1";
+    const PINS_KEY = "fbxViewerPinsV1";
+    const SESSION_KEY = "fbxViewerLastSessionV1";
     function pathBasename(p) {
       const s = String(p).replace(/[\\/]+$/, "");
       const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
@@ -884,7 +925,7 @@
     function updateExportPinnedButton() {
       if (btnExportPinned) btnExportPinned.disabled = pinnedOrder.length === 0;
     }
-    const THUMB_TILE_KEY = "fbxBrowserThumbGridMinV1";
+    const THUMB_TILE_KEY = "fbxViewerThumbGridMinV1";
     function applyThumbTileMin(px) {
       const n = Math.min(240, Math.max(72, Math.round(Number(px)) || 110));
       if (appEl) appEl.style.setProperty("--thumb-grid-min", n + "px");
@@ -1016,7 +1057,7 @@
       }
     }
 
-    function initEmptyBrowser() {
+    function initEmptyViewer() {
       treePathHintEl.textContent = "No folder open. Use Open folder… to pick a directory.";
       treePathHintEl.title = "";
       treeRootPath = "";
@@ -1709,7 +1750,7 @@
     } else {
       (async () => {
         const ok = await tryRestoreLastSession();
-        if (!ok) initEmptyBrowser();
+        if (!ok) initEmptyViewer();
       })();
     }
     getThree()
