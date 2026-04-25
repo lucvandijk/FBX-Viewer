@@ -2,6 +2,44 @@
 
 A small **Electron** desktop app for browsing folders of **FBX** files, previewing them in a **3D viewport**, and collecting models you care about for use elsewhere (for example in a game engine).
 
+## Screenshots
+
+### 1. View 3D models
+
+Select a folder, click a thumbnail, and the model opens in the **3D view** on the right. Drag to orbit, scroll to zoom, and use right-drag to pan.
+
+![3D model preview in the viewer](screenshots/view-model.png)
+
+### 2. View model as wireframe
+
+Click **Wireframe** in the 3D toolbar to inspect mesh topology and edge flow without full shading.
+
+![Model shown in wireframe mode](screenshots/view-model-wireframes.png)
+
+### 3. Change lighting (dim and bright)
+
+Use the **Scene light** slider (and **Scene lights** / **Ambient only** if you need a flatter look) to compare dark and bright lighting on the same asset.
+
+*Dim lighting (lower intensity).*
+
+![Low scene light intensity](screenshots/change-lighting-low-lighting.png)
+
+*Bright lighting (higher intensity).*
+
+![High scene light intensity](screenshots/change-lighting-bright-lighting.png)
+
+### 4. Add models to favorites
+
+Click the **star** on a thumbnail to **pin** a model. Pinned files appear in the **Pinned** section so you can get back to them quickly.
+
+![Pinning a model to favorites with the star control](screenshots/add-models-to-favorites.png)
+
+### 5. Export favorites to a ZIP file
+
+**Export pinned to ZIP…** (in the Thumbnails panel) packages every pinned `.fbx` into a single archive—handy for copying assets into a game or engine.
+
+![Save dialog: export all pinned FBX to a new ZIP file](screenshots/export-all-favorite-fbx-to-new-zip.png)
+
 ## What you can do
 
 - **Open a folder** — Pick any directory on disk. The app builds a tree on the left and lists every `.fbx` under that root (recursively) as thumbnails in the middle column.
