@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# electron-builder
+release/
+dist/
+out/
+
+# Logs & debug
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Optional local tooling
+.cache/
+*.tsbuildinfo
+
+# IDEs (uncomment if you do not want to share team settings)
+# .vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.sublime-workspace
+*.sublime-project
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Optional lockfile: keep one; most teams commit package-lock.json or yarn.lock
+# yarn.lock
+# pnpm-lock.yaml

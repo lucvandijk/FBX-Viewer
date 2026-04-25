@@ -1,0 +1,1720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://unpkg.com 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://unpkg.com" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FBX Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- jsm/ loaders use `from 'three'`; without this map, those sub-imports never resolve. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.128.0/build/three.module.js"
+    }
+  }
+  </script>
+  <style>
+    :root {
+      --bg: #1a1b22;
+      --surface: #22242e;
+      --border: #363a4a;
+      --accent: #d4e86a;
+      --text: #f0f1f4;
+      --muted: #9ca3b0;
+      --viewer-bg: #1e2028;
+      --thumb-stage: #181a22;
+      --overlay-ui: rgba(30, 32, 40, 0.92);
+      --row-hover: rgba(212, 232, 106, 0.08);
+      --row-active: rgba(212, 232, 106, 0.16);
+      --btn-primary-bg: rgba(212, 232, 106, 0.12);
+      --resize-hover: #2a2d36;
+      --thumb-grid-min: 110px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; height: 100%; overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 12.5px;
+      font-feature-settings: "tnum" 1, "ss01" 1;
+    }
+    h1, h2, .title {
+      font-family: "Inter", system-ui, sans-serif;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    .font-mono, code, kbd, .path-like {
+      font-family: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+    }
+    .app {
+      display: flex;
+      height: 100vh;
+      min-height: 0;
+    }
+    .col-tree, .col-thumbs, .col-viewer {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+    .col-tree {
+      width: 280px;
+      flex: 0 0 280px;
+    }
+    .col-thumbs {
+      width: 380px;
+      flex: 0 0 380px;
+    }
+    .col-viewer { flex: 1 1 auto; }
+    .panel-head {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .panel-head h1 { font-size: 14px; letter-spacing: 0.04em; color: var(--accent); }
+    .panel-sub { color: var(--muted); font-size: 10px; margin-top: 4px; }
+    .panel-sub.path-like {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 9.5px;
+      line-height: 1.4;
+    }
+    .resize {
+      width: 6px;
+      flex: 0 0 6px;
+      cursor: col-resize;
+      background: var(--bg);
+      border: solid var(--border);
+      border-width: 1px 0;
+      position: relative;
+    }
+    .resize::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 2px; right: 2px; bottom: 0;
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      opacity: 0.4;
+    }
+    .resize:hover, .resize.active {
+      background: var(--resize-hover);
+    }
+    .tree-scroll, .thumbs-scroll {
+      flex: 1;
+      overflow: auto;
+      padding: 8px 0;
+    }
+    .tree-node {
+      user-select: none;
+    }
+    .tree-row {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 3px 8px 3px 4px;
+      cursor: pointer;
+      min-height: 24px;
+    }
+    .tree-row:hover { background: var(--row-hover); }
+    .tree-row.active {
+      background: var(--row-active);
+      border-left: 2px solid var(--accent);
+      padding-left: 2px;
+    }
+    .tree-toggle {
+      width: 18px; height: 18px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      color: var(--muted);
+      font-size: 9px;
+    }
+    .tree-toggle.empty { visibility: hidden; }
+    .tree-icon { margin-right: 4px; color: var(--accent); }
+    .tree-name {
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 11.5px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tree-children { margin-left: 4px; border-left: 1px solid var(--border); }
+    .thumbs-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(var(--thumb-grid-min), 1fr));
+      gap: 10px;
+      padding: 10px 12px 16px;
+    }
+    .thumb-card {
+      position: relative;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      padding: 8px;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.15s;
+    }
+    .thumb-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 14px rgba(15, 18, 28, 0.18);
+    }
+    .thumb-card.selected {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent);
+    }
+    .thumb-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 4/3;
+      background: var(--thumb-stage);
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    .thumb-wrap img, .thumb-wrap canvas { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+    .thumb-label {
+      margin-top: 8px;
+      font-size: 10px;
+      font-family: "Inter", system-ui, sans-serif;
+      color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .spinner {
+      width: 22px; height: 22px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .viewer-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .btn {
+      font-family: "Inter", system-ui, sans-serif;
+      font-size: 11.5px;
+      font-weight: 500;
+      padding: 6px 10px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      cursor: pointer;
+      border-radius: 3px;
+    }
+    .btn:hover { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: 0.4; pointer-events: none; }
+    .btn[aria-pressed="true"] {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--btn-primary-bg);
+    }
+    .btn-primary {
+      background: var(--btn-primary-bg);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .anim-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .anim-bar[hidden] { display: none !important; }
+    .viewer-light-controls {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin-left: 4px;
+      padding-left: 10px;
+      border-left: 1px solid var(--border);
+    }
+    .viewer-light-label {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: "Inter", system-ui, sans-serif;
+    }
+    .viewer-light-inline {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: "Inter", system-ui, sans-serif;
+    }
+    .light-intensity-val {
+      font-size: 10px;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 2.75em;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+    }
+    .viewer-light-controls input[type="range"] {
+      width: 92px;
+      min-width: 72px;
+      accent-color: var(--accent);
+    }
+    .viewer-light-controls select {
+      font-family: "Inter", system-ui, sans-serif;
+      font-size: 11px;
+      padding: 4px 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .viewer-light-controls select:hover { border-color: var(--accent); }
+    .viewer-light-controls select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .viewer-canvas-wrap {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+    .model-stats-overlay {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 6;
+      max-width: 260px;
+      padding: 10px 12px;
+      background: rgba(26, 27, 34, 0.78);
+      border: 1px solid rgba(90, 94, 110, 0.55);
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      color: var(--text);
+      line-height: 1.5;
+      pointer-events: none;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+    .model-stats-overlay[hidden] { display: none !important; }
+    .model-stats-overlay .model-stats-row { margin: 0; }
+    .model-stats-overlay .model-stats-row + .model-stats-row { margin-top: 4px; }
+    .model-stats-overlay .model-stats-val { color: #b4bcc8; }
+    #viewer {
+      position: absolute;
+      inset: 0;
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .empty-hint {
+      color: var(--muted);
+      padding: 20px 16px;
+    }
+    .btn-block {
+      width: 100%;
+      margin-top: 10px;
+      text-align: center;
+    }
+    .thumbs-search {
+      width: 100%;
+      margin-top: 8px;
+      padding: 6px 8px;
+      font-family: "JetBrains Mono", ui-monospace, monospace;
+      font-size: 10.5px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      color: var(--text);
+    }
+    .thumbs-search::placeholder { color: var(--muted); }
+    .thumbs-search:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      border: 0;
+    }
+    .thumb-star {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      z-index: 2;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      background: var(--overlay-ui);
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      line-height: 1;
+      padding: 0;
+      border-radius: 2px;
+    }
+    .thumb-star:hover { color: var(--accent); background: var(--btn-primary-bg); }
+    .thumb-star[aria-pressed="true"] { color: var(--accent); }
+    .thumb-wrap.thumb-wrap-folder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      line-height: 1;
+    }
+    .thumbs-pinned {
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 8px;
+      padding-bottom: 10px;
+    }
+    .thumbs-pinned-title {
+      font-family: "Inter", system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      padding: 0 12px 8px;
+    }
+    #thumbsInner,
+    #thumbsPinned { padding-bottom: 8px; }
+    #treePathHint {
+      word-break: break-all;
+      line-height: 1.45;
+      max-height: 64px;
+      overflow-y: auto;
+      margin-top: 8px;
+    }
+    .thumbs-size-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .thumbs-size-row label {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 10px;
+    }
+    .thumbs-size-row input[type="range"] {
+      flex: 1;
+      min-width: 0;
+      accent-color: var(--accent);
+    }
+    .thumbs-export-row {
+      margin-top: 8px;
+    }
+    .thumbs-export-row .btn {
+      width: 100%;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="col-tree" data-col="tree">
+      <div class="panel-head">
+        <h1>FBX Browser</h1>
+        <button type="button" class="btn btn-primary btn-block" id="btnPickFolder" title="Choose any folder to list FBX files">Open folder…</button>
+        <div class="panel-sub path-like" id="treePathHint" title="">No folder open. Use Open folder… to pick a directory.</div>
+      </div>
+      <div class="tree-scroll" id="treeRoot"></div>
+    </aside>
+    <div class="resize" data-pair="tree-thumbs" role="separator" aria-orientation="vertical"></div>
+    <section class="col-thumbs" data-col="thumbs">
+      <div class="panel-head">
+        <h1 class="title" style="font-size: 13px;">Thumbnails</h1>
+        <label class="sr-only" for="thumbsSearch">Filter files and folders</label>
+        <input type="search" class="thumbs-search" id="thumbsSearch" placeholder="Filter by name…" autocomplete="off" />
+        <div class="thumbs-size-row">
+          <label for="thumbsTileSize">Tile size</label>
+          <input type="range" id="thumbsTileSize" min="72" max="240" step="4" value="110" title="Thumbnail tile minimum width" />
+        </div>
+        <div class="thumbs-export-row">
+          <button type="button" class="btn" id="btnExportPinned" disabled title="Save all pinned .fbx files into one ZIP for your game or engine">Export pinned to ZIP…</button>
+        </div>
+        <div class="panel-sub path-like" id="thumbsPathLabel">—</div>
+      </div>
+      <div class="thumbs-scroll" id="thumbsGrid">
+        <div class="empty-hint" id="thumbsEmpty">Select a folder to list FBX files.</div>
+        <div class="thumbs-pinned" id="thumbsPinnedSection" style="display: none;">
+          <div class="thumbs-pinned-title">Pinned</div>
+          <div class="thumbs-grid" id="thumbsPinned"></div>
+        </div>
+        <div class="thumbs-grid" id="thumbsInner" style="display: none;"></div>
+      </div>
+    </section>
+    <div class="resize" data-pair="thumbs-viewer" role="separator" aria-orientation="vertical"></div>
+    <section class="col-viewer" data-col="viewer">
+      <div class="panel-head">
+        <h1 class="title" style="font-size: 13px;">3D view</h1>
+      </div>
+      <div class="viewer-toolbar">
+        <button type="button" class="btn btn-primary" id="btnFocus" disabled>Focus / recenter</button>
+        <button type="button" class="btn" id="btnWire" disabled>Wireframe</button>
+        <button type="button" class="btn" id="btnModelStats" disabled title="Show or hide model size and mesh statistics" aria-pressed="false">Model stats</button>
+        <button type="button" class="btn" id="btnLighting" title="Use full scene lighting (hemisphere + directionals) or flat ambient" aria-pressed="true">Scene lights</button>
+        <div class="viewer-light-controls" id="viewerLightControls">
+          <span class="viewer-light-label">Scene light</span>
+          <label class="sr-only" for="lightIntensity">Scene light intensity</label>
+          <input type="range" id="lightIntensity" min="25" max="200" step="5" value="100" title="Overall brightness of scene lights" />
+          <span class="light-intensity-val" id="lightIntensityValue" aria-hidden="true">100%</span>
+          <label class="viewer-light-inline" for="lightPoints">Points</label>
+          <select id="lightPoints" title="Number of directional lights (key, fill, rim)">
+            <option value="minimal">1 · Key only</option>
+            <option value="standard" selected>2 · Key + fill</option>
+            <option value="full">3 · Key + fill + rim</option>
+          </select>
+          <label class="viewer-light-inline" for="lightWarmth">Warmth</label>
+          <select id="lightWarmth" title="Color temperature of fill and ambient hemisphere">
+            <option value="cool">Cool</option>
+            <option value="neutral" selected>Neutral</option>
+            <option value="warm">Warm</option>
+          </select>
+        </div>
+        <div class="anim-bar" id="animBar" hidden>
+          <span style="color: var(--muted);">Animation</span>
+          <button type="button" class="btn" id="btnPlay">Play</button>
+          <button type="button" class="btn" id="btnPause">Pause</button>
+        </div>
+      </div>
+      <div class="viewer-canvas-wrap">
+        <canvas id="viewer"></canvas>
+        <div id="modelStatsOverlay" class="model-stats-overlay" hidden>
+          <p class="model-stats-row">Size W×D×H <span class="model-stats-val" id="modelStatSize">—</span></p>
+          <p class="model-stats-row">Triangles <span class="model-stats-val" id="modelStatTris">—</span></p>
+          <p class="model-stats-row">Vertices <span class="model-stats-val" id="modelStatVerts">—</span></p>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script type="module">
+    const SCENE_LIGHTS_KEY = "fbxBrowserSceneLightsV1";
+    const SCENE_LIGHT_INTENSITY_KEY = "fbxBrowserLightIntensityV1";
+    const SCENE_LIGHT_POINTS_KEY = "fbxBrowserLightPointsV1";
+    const SCENE_LIGHT_WARMTH_KEY = "fbxBrowserLightWarmthV1";
+    const MODEL_STATS_VIS_KEY = "fbxBrowserModelStatsVisV1";
+
+    const LIGHT_WARMTH_PALETTES = {
+      cool: { hemiSky: 0xd8dce4, hemiGround: 0x5c646e, fill: 0x8a9aac, rim: 0xa8b8c8 },
+      neutral: { hemiSky: 0xc9c4bc, hemiGround: 0x6e6a64, fill: 0xa89878, rim: 0xc8b8a0 },
+      warm: { hemiSky: 0xe8dcc8, hemiGround: 0x6a6254, fill: 0xd4a060, rim: 0xe0a070 }
+    };
+    const AMBIENT_ONLY_TINT = { cool: 0xd8e0ec, neutral: 0xffffff, warm: 0xf2ebe3 };
+
+    const api = {
+      readDir: (p) => window.readDir(p),
+      findFbxInDirectory: (p) =>
+        typeof window.findFbxInDirectory === "function"
+          ? window.findFbxInDirectory(p)
+          : Promise.resolve([]),
+      readFile: (p) => window.readFile(p),
+      getHomedir: () => window.getHomedir(),
+      pickFolder: () => window.pickFolder(),
+      statPath: (p) => (typeof window.statPath === "function" ? window.statPath(p) : Promise.resolve(null)),
+      thumbCacheTryRead: (p) =>
+        typeof window.thumbCacheTryRead === "function"
+          ? window.thumbCacheTryRead(p)
+          : Promise.resolve({ hit: false }),
+      thumbCacheSave: (filePath, dataUrl) =>
+        typeof window.thumbCacheSave === "function"
+          ? window.thumbCacheSave({ filePath, dataUrl })
+          : Promise.resolve(false),
+      exportFavoritesToZip: (paths) =>
+        typeof window.exportFavoritesToZip === "function"
+          ? window.exportFavoritesToZip(paths)
+          : Promise.resolve({ ok: false, error: "unavailable" })
+    };
+
+    let threeLoadPromise = null;
+    function getThree() {
+      if (!threeLoadPromise) {
+        const base = "https://unpkg.com/three@0.128.0";
+        threeLoadPromise = (async () => {
+          const THREE = await import("three");
+          const { FBXLoader } = await import(`${base}/examples/jsm/loaders/FBXLoader.js`);
+          const { OrbitControls } = await import(`${base}/examples/jsm/controls/OrbitControls.js`);
+          return { THREE, FBXLoader, OrbitControls };
+        })();
+      }
+      return threeLoadPromise;
+    }
+
+    let loadFbxInViewer = () => {};
+
+    // --- Resizable columns ---
+    (function initResize() {
+      const cols = { tree: document.querySelector("[data-col=tree]"), thumbs: document.querySelector("[data-col=thumbs]") };
+      const state = { tree: 280, thumbs: 380 };
+      const KEY = "fbxBrowserColWidths";
+      try {
+        const s = localStorage.getItem(KEY);
+        if (s) {
+          const j = JSON.parse(s);
+          if (j.tree) state.tree = j.tree;
+          if (j.thumbs) state.thumbs = j.thumbs;
+        }
+      } catch (e) {}
+      function apply() {
+        cols.tree.style.setProperty("width", state.tree + "px", "important");
+        cols.tree.style.setProperty("flex", `0 0 ${state.tree}px`, "important");
+        cols.thumbs.style.setProperty("width", state.thumbs + "px", "important");
+        cols.thumbs.style.setProperty("flex", `0 0 ${state.thumbs}px`, "important");
+      }
+      apply();
+      let active = null;
+      const min = { tree: 160, thumbs: 220 };
+      document.querySelectorAll(".resize").forEach((h) => {
+        h.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          active = { el: h, pair: h.dataset.pair, startX: e.clientX, startTree: state.tree, startThumbs: state.thumbs };
+          h.classList.add("active");
+        });
+      });
+      window.addEventListener("mousemove", (e) => {
+        if (!active) return;
+        const dx = e.clientX - active.startX;
+        if (active.pair === "tree-thumbs") {
+          state.tree = Math.max(min.tree, active.startTree + dx);
+        } else {
+          state.thumbs = Math.max(min.thumbs, active.startThumbs + dx);
+        }
+        apply();
+        if (window.__viewerOnResize) window.__viewerOnResize();
+      });
+      window.addEventListener("mouseup", () => {
+        if (active) {
+          try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+          active.el.classList.remove("active");
+          active = null;
+        }
+      });
+    })();
+
+    // --- Helpers ---
+    function toArrayBuffer(data) {
+      if (data instanceof ArrayBuffer) return data;
+      if (data instanceof Uint8Array) {
+        if (data.byteOffset === 0 && data.byteLength === data.buffer.byteLength) return data.buffer;
+        return data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+      }
+      return new ArrayBuffer(0);
+    }
+
+    function resourceDirFor(filePath) {
+      if (!filePath) return "";
+      const s = String(filePath).replace(/[\\/]+$/, "");
+      const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+      return i === -1 ? "" : s.slice(0, i);
+    }
+
+    function countMeshGeometryStats(root) {
+      let vertices = 0;
+      let triangles = 0;
+      root.traverse((o) => {
+        if (!o.isMesh || !o.geometry) return;
+        const g = o.geometry;
+        const pos = g.attributes && g.attributes.position;
+        if (!pos) return;
+        const vc = pos.count;
+        vertices += vc;
+        if (g.index) triangles += g.index.count / 3;
+        else triangles += vc / 3;
+      });
+      return { vertices: Math.round(vertices), triangles: Math.round(triangles) };
+    }
+
+    // --- Thumbnail (shared GL + disk cache + lazy viewport) ---
+    const thumbCache = new Map();
+    let thumbGlShared = null;
+
+    async function renderFbxThumbDataUrl(arrayBuffer, fbxFilePath) {
+      const { THREE, FBXLoader } = await getThree();
+      const w = 160;
+      const h = 120;
+      if (!thumbGlShared) {
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x8f8a84);
+        const amb = new THREE.AmbientLight(0x909090, 0.55);
+        const dir1 = new THREE.DirectionalLight(0xffffff, 0.55);
+        dir1.position.set(2, 4, 3);
+        const dir2 = new THREE.DirectionalLight(0xc8a878, 0.2);
+        dir2.position.set(-2, 1, -1);
+        scene.add(amb, dir1, dir2);
+        const renderer = new THREE.WebGLRenderer({
+          antialias: false,
+          alpha: false,
+          preserveDrawingBuffer: true,
+          powerPreference: "low-power"
+        });
+        renderer.setSize(w, h);
+        renderer.setPixelRatio(1);
+        thumbGlShared = { THREE, scene, renderer, w, h, root: null, cam: null };
+      }
+      const { scene, renderer } = thumbGlShared;
+      const T = thumbGlShared.THREE;
+      if (thumbGlShared.root) {
+        scene.remove(thumbGlShared.root);
+        thumbGlShared.root.traverse((o) => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) {
+            const m = o.material;
+            if (Array.isArray(m)) m.forEach((x) => x.dispose && x.dispose());
+            else m.dispose && m.dispose();
+          }
+        });
+        thumbGlShared.root = null;
+      }
+      if (thumbGlShared.cam) {
+        scene.remove(thumbGlShared.cam);
+        thumbGlShared.cam = null;
+      }
+      const fbxLoader = new FBXLoader();
+      const root = fbxLoader.parse(arrayBuffer, resourceDirFor(fbxFilePath));
+      scene.add(root);
+      thumbGlShared.root = root;
+      const box = new T.Box3().setFromObject(root);
+      const center = new T.Vector3();
+      const size = new T.Vector3();
+      let cam;
+      if (!box.isEmpty()) {
+        box.getCenter(center);
+        box.getSize(size);
+        const maxD = Math.max(size.x, size.y, size.z, 0.001);
+        root.position.sub(center);
+        cam = new T.PerspectiveCamera(40, w / h, 0.01, maxD * 200);
+        const fov = (cam.fov * Math.PI) / 180;
+        const d = (maxD / 2 / Math.tan(fov / 2)) * 1.2;
+        cam.position.set(d * 0.55, d * 0.4, d * 0.75);
+        cam.lookAt(0, 0, 0);
+      } else {
+        cam = new T.PerspectiveCamera(40, w / h, 0.1, 200);
+        cam.position.set(3, 2, 4);
+        cam.lookAt(0, 0, 0);
+      }
+      scene.add(cam);
+      thumbGlShared.cam = cam;
+      renderer.render(scene, cam);
+      const url = renderer.domElement.toDataURL("image/jpeg", 0.82);
+      scene.remove(root);
+      root.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const m = o.material;
+          if (Array.isArray(m)) m.forEach((x) => x.dispose && x.dispose());
+          else m.dispose && m.dispose();
+        }
+      });
+      thumbGlShared.root = null;
+      scene.remove(cam);
+      thumbGlShared.cam = null;
+      return url;
+    }
+
+    let thumbViewportObserver = null;
+    function disconnectThumbViewportObserver() {
+      if (thumbViewportObserver) {
+        thumbViewportObserver.disconnect();
+        thumbViewportObserver = null;
+      }
+    }
+    function ensureThumbViewportObserver() {
+      const root = document.getElementById("thumbsGrid");
+      if (!root) return null;
+      if (thumbViewportObserver) return thumbViewportObserver;
+      thumbViewportObserver = new IntersectionObserver(
+        (entries) => {
+          for (const ent of entries) {
+            if (!ent.isIntersecting) continue;
+            const wrap = ent.target;
+            thumbViewportObserver.unobserve(wrap);
+            if (wrap.dataset.thumbScheduled === "1") continue;
+            wrap.dataset.thumbScheduled = "1";
+            const fbxPath = wrap.dataset.thumbPath;
+            if (!fbxPath) continue;
+            const img = wrap.querySelector("img");
+            const spin = wrap.querySelector(".spinner");
+            queueThumbJobForPath(fbxPath, img, spin, wrap);
+          }
+        },
+        { root, rootMargin: "360px 0px 360px 0px", threshold: 0.01 }
+      );
+      return thumbViewportObserver;
+    }
+
+    const thumbQueue = [];
+    let thumbRunning = 0;
+    const THUMB_CONC = 1;
+    function pumpThumbs() {
+      while (thumbRunning < THUMB_CONC && thumbQueue.length) {
+        const job = thumbQueue.shift();
+        thumbRunning++;
+        job()
+          .catch(() => {})
+          .finally(() => {
+            thumbRunning--;
+          })
+          .then(() => new Promise((r) => requestAnimationFrame(r)))
+          .then(() => {
+            pumpThumbs();
+          });
+      }
+    }
+    function queueThumb(fn) {
+      thumbQueue.push(fn);
+      pumpThumbs();
+    }
+
+    function queueThumbJobForPath(fbxPath, img, spin, wrap) {
+      queueThumb(async () => {
+        if (!img || !wrap.isConnected) return;
+        try {
+          if (thumbCache.has(fbxPath)) {
+            if (spin && spin.parentNode) spin.remove();
+            img.src = thumbCache.get(fbxPath);
+            img.style.display = "block";
+            return;
+          }
+          const disk = await api.thumbCacheTryRead(fbxPath);
+          if (!wrap.isConnected) return;
+          if (disk.hit && disk.dataUrl) {
+            thumbCache.set(fbxPath, disk.dataUrl);
+            if (spin && spin.parentNode) spin.remove();
+            img.src = disk.dataUrl;
+            img.style.display = "block";
+            return;
+          }
+          const buf = toArrayBuffer(await api.readFile(fbxPath));
+          if (!wrap.isConnected) return;
+          await new Promise((r) => requestAnimationFrame(r));
+          if (!wrap.isConnected) return;
+          const dataUrl = await renderFbxThumbDataUrl(buf, fbxPath);
+          thumbCache.set(fbxPath, dataUrl);
+          if (spin && spin.parentNode) spin.remove();
+          img.src = dataUrl;
+          img.style.display = "block";
+          await api.thumbCacheSave(fbxPath, dataUrl);
+        } catch (err) {
+          if (!wrap.isConnected) return;
+          if (spin && spin.parentNode) spin.remove();
+          img.style.display = "block";
+          img.src =
+            "data:image/svg+xml," +
+            encodeURIComponent(
+              "<svg xmlns='http://www.w3.org/2000/svg' width='200' height='150'><rect fill='%238f8a84' width='100%25' height='100%25'/><text x='50%25' y='50%25' text-anchor='middle' fill='%239ca3b0' font-size='11' font-family='monospace'>Failed</text></svg>"
+            );
+        }
+      });
+    }
+
+    // --- Tree + thumbs state ---
+    const PINS_KEY = "fbxBrowserPinsV1";
+    const SESSION_KEY = "fbxBrowserLastSessionV1";
+    function pathBasename(p) {
+      const s = String(p).replace(/[\\/]+$/, "");
+      const i = Math.max(s.lastIndexOf("/"), s.lastIndexOf("\\"));
+      return i === -1 ? s : s.slice(i + 1);
+    }
+    function isPathUnderOrEqual(root, child) {
+      const r = String(root).replace(/[\\/]+$/, "").toLowerCase();
+      const c = String(child).replace(/[\\/]+$/, "").toLowerCase();
+      if (!r || !c) return false;
+      if (c === r) return true;
+      return c.startsWith(r + "\\") || c.startsWith(r + "/");
+    }
+    let treeRootPath = "";
+    let treeRootLabel = "";
+    let selectedFolder = "";
+    const expanded = new Set();
+    const childCache = new Map();
+    function ensureExpandedForPath(absolutePath, root) {
+      const r = String(root).replace(/[\\/]+$/, "");
+      let p = String(absolutePath).replace(/[\\/]+$/, "");
+      while (p && p.length >= r.length) {
+        expanded.add(p);
+        if (p === r) return;
+        const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+        if (i <= 0) break;
+        p = p.slice(0, i);
+      }
+      expanded.add(r);
+    }
+
+    let pinnedOrder = [];
+    try {
+      const raw = localStorage.getItem(PINS_KEY);
+      const a = raw ? JSON.parse(raw) : [];
+      pinnedOrder = Array.isArray(a) ? a : [];
+    } catch (_) {
+      pinnedOrder = [];
+    }
+    const pinnedSet = new Set(pinnedOrder);
+    function persistPins() {
+      try {
+        localStorage.setItem(PINS_KEY, JSON.stringify(pinnedOrder));
+      } catch (_) { /* ignore */ }
+    }
+    function togglePin(fullPath) {
+      if (pinnedSet.has(fullPath)) {
+        pinnedSet.delete(fullPath);
+        pinnedOrder = pinnedOrder.filter((x) => x !== fullPath);
+      } else {
+        pinnedOrder.push(fullPath);
+        pinnedSet.add(fullPath);
+      }
+      persistPins();
+      updateExportPinnedButton();
+      refreshThumbs();
+    }
+
+    const treeRootEl = document.getElementById("treeRoot");
+    const treePathHintEl = document.getElementById("treePathHint");
+    const thumbsPathLabel = document.getElementById("thumbsPathLabel");
+    const thumbsEmpty = document.getElementById("thumbsEmpty");
+    const thumbsInner = document.getElementById("thumbsInner");
+    const thumbsSearch = document.getElementById("thumbsSearch");
+    const thumbsPinnedSection = document.getElementById("thumbsPinnedSection");
+    const thumbsPinned = document.getElementById("thumbsPinned");
+    const thumbsTileSize = document.getElementById("thumbsTileSize");
+    const btnExportPinned = document.getElementById("btnExportPinned");
+    const appEl = document.getElementById("app");
+    function updateExportPinnedButton() {
+      if (btnExportPinned) btnExportPinned.disabled = pinnedOrder.length === 0;
+    }
+    const THUMB_TILE_KEY = "fbxBrowserThumbGridMinV1";
+    function applyThumbTileMin(px) {
+      const n = Math.min(240, Math.max(72, Math.round(Number(px)) || 110));
+      if (appEl) appEl.style.setProperty("--thumb-grid-min", n + "px");
+      if (thumbsTileSize) thumbsTileSize.value = String(n);
+      try { localStorage.setItem(THUMB_TILE_KEY, String(n)); } catch (_) { /* ignore */ }
+    }
+    let thumbTileInit = 110;
+    try {
+      const raw = localStorage.getItem(THUMB_TILE_KEY);
+      if (raw != null) {
+        const p = parseInt(raw, 10);
+        if (!Number.isNaN(p)) thumbTileInit = Math.min(240, Math.max(72, p));
+      }
+    } catch (_) { /* ignore */ }
+    applyThumbTileMin(thumbTileInit);
+    if (thumbsTileSize) {
+      thumbsTileSize.addEventListener("input", () => {
+        applyThumbTileMin(thumbsTileSize.valueAsNumber || parseInt(thumbsTileSize.value, 10));
+      });
+    }
+    updateExportPinnedButton();
+    if (btnExportPinned) {
+      btnExportPinned.addEventListener("click", async () => {
+        if (pinnedOrder.length === 0) return;
+        btnExportPinned.disabled = true;
+        try {
+          const res = await api.exportFavoritesToZip(pinnedOrder.slice());
+          if (res && res.canceled) return;
+          if (res && res.ok) {
+            let msg = `Saved ${res.count} file(s):\n${res.path}`;
+            if (res.skipped > 0) {
+              msg += `\n\n(${res.skipped} pinned path(s) were missing or not files and were skipped.)`;
+            }
+            alert(msg);
+          } else if (res && res.error === "empty") {
+            alert("No pinned files to export.");
+          } else if (res && res.error === "no_files") {
+            alert("None of the pinned files could be read. They may have been moved or deleted.");
+          } else if (res && res.error === "write_failed") {
+            alert("Could not write the ZIP: " + (res.message || ""));
+          } else {
+            alert("Export is not available in this environment.");
+          }
+        } catch (err) {
+          alert("Export failed: " + (err && err.message ? err.message : String(err)));
+        } finally {
+          updateExportPinnedButton();
+        }
+      });
+    }
+    let selectedFbxPath = null;
+
+    async function ensureChildren(dirPath) {
+      if (childCache.has(dirPath)) return childCache.get(dirPath);
+      const list = await api.readDir(dirPath);
+      const onlyDirs = list.filter((e) => e.isDirectory);
+      onlyDirs.sort((a, b) => a.name.localeCompare(b.name));
+      childCache.set(dirPath, onlyDirs);
+      return onlyDirs;
+    }
+
+    function renderTreeSimple() {
+      treeRootEl.innerHTML = "";
+      if (!treeRootPath) return;
+      const root = document.createElement("div");
+      root.className = "tree-node";
+      appendTreeLevel(root, treeRootPath, treeRootLabel, 0);
+      treeRootEl.appendChild(root);
+    }
+
+    function appendTreeLevel(parentEl, dirPath, displayName, depth) {
+      const cont = document.createElement("div");
+      cont.className = "tree-node";
+      cont.dataset.path = dirPath;
+      const row = document.createElement("div");
+      row.className = "tree-row" + (selectedFolder === dirPath ? " active" : "");
+      const listLoaded = childCache.has(dirPath);
+      const subdirs = listLoaded ? childCache.get(dirPath) : null;
+      const isLeaf = listLoaded && subdirs.length === 0;
+      const toggle = document.createElement("div");
+      toggle.className = "tree-toggle" + (isLeaf ? " empty" : "");
+      toggle.textContent = isLeaf ? "" : (expanded.has(dirPath) ? "▼" : "▶");
+      const icon = document.createElement("span");
+      icon.className = "tree-icon";
+      icon.textContent = "▣";
+      const name = document.createElement("div");
+      name.className = "tree-name";
+      name.textContent = displayName;
+      name.title = dirPath;
+      row.appendChild(toggle);
+      row.appendChild(icon);
+      row.appendChild(name);
+      cont.appendChild(row);
+      name.addEventListener("click", (e) => { e.stopPropagation(); selectFolder(dirPath); });
+      toggle.addEventListener("click", (e) => {
+        e.stopPropagation();
+        if (toggle.classList.contains("empty")) return;
+        if (expanded.has(dirPath)) {
+          expanded.delete(dirPath);
+        } else {
+          expanded.add(dirPath);
+        }
+        renderTreeSimple();
+        persistLastSession();
+      });
+      parentEl.appendChild(cont);
+      if (expanded.has(dirPath)) {
+        const chWrap = document.createElement("div");
+        chWrap.className = "tree-children";
+        chWrap.style.paddingLeft = "10px";
+        cont.appendChild(chWrap);
+        if (!listLoaded) {
+          const wait = document.createElement("div");
+          wait.className = "empty-hint";
+          wait.style.fontSize = "9px";
+          wait.style.padding = "2px 4px 8px";
+          wait.textContent = "…";
+          chWrap.appendChild(wait);
+          ensureChildren(dirPath).then(() => { renderTreeSimple(); });
+        } else if (subdirs.length) {
+          subdirs.forEach((c) => { appendTreeLevel(chWrap, c.path, c.name, depth + 1); });
+        } else {
+          const s = document.createElement("div");
+          s.className = "empty-hint";
+          s.style.fontSize = "9px";
+          s.textContent = "(no subfolders)";
+          chWrap.appendChild(s);
+        }
+      }
+    }
+
+    function initEmptyBrowser() {
+      treePathHintEl.textContent = "No folder open. Use Open folder… to pick a directory.";
+      treePathHintEl.title = "";
+      treeRootPath = "";
+      treeRootLabel = "";
+      selectedFolder = "";
+      childCache.clear();
+      expanded.clear();
+      if (thumbsPathLabel) thumbsPathLabel.textContent = "—";
+      renderTreeSimple();
+      refreshThumbs();
+    }
+
+    function persistLastSession() {
+      if (!treeRootPath) return;
+      try {
+        localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({
+            root: treeRootPath,
+            selected: selectedFolder,
+            expanded: Array.from(expanded)
+          })
+        );
+      } catch (_) { /* ignore */ }
+    }
+
+    function selectFolder(dirPath) {
+      selectedFolder = dirPath;
+      treePathHintEl.textContent = "Active: " + dirPath;
+      treePathHintEl.title = dirPath;
+      renderTreeSimple();
+      thumbsPathLabel.textContent = dirPath;
+      refreshThumbs();
+      persistLastSession();
+    }
+
+    function getFilterText() {
+      return (thumbsSearch && thumbsSearch.value ? thumbsSearch.value : "").trim().toLowerCase();
+    }
+
+    function nameMatchesFilter(name) {
+      const f = getFilterText();
+      return !f || String(name).toLowerCase().includes(f);
+    }
+
+    function entryMatchesFbxFilter(e) {
+      const f = getFilterText();
+      if (!f) return true;
+      const t = f.toLowerCase();
+      if (String(e.name).toLowerCase().includes(t)) return true;
+      const lab = e.label != null && e.label !== "" ? String(e.label) : "";
+      return lab.toLowerCase().includes(t);
+    }
+
+    function clearAllThumbs() {
+      disconnectThumbViewportObserver();
+      thumbsInner.innerHTML = "";
+      if (thumbsPinned) thumbsPinned.innerHTML = "";
+    }
+
+    function selectThumbCardEl(card) {
+      document.querySelectorAll(".thumb-card").forEach((c) => c.classList.remove("selected"));
+      if (card) card.classList.add("selected");
+    }
+
+    function appendThumbCard(parentEl, e) {
+      const card = document.createElement("div");
+      const isPin = pinnedSet.has(e.path);
+      card.className = "thumb-card" + (e.isDirectory ? " thumb-card-folder" : "") + (selectedFbxPath === e.path && !e.isDirectory ? " selected" : "");
+      card.dataset.path = e.path;
+
+      const star = document.createElement("button");
+      star.type = "button";
+      star.className = "thumb-star";
+      star.setAttribute("aria-pressed", isPin ? "true" : "false");
+      star.setAttribute("aria-label", isPin ? "Unpin" : "Pin");
+      star.textContent = isPin ? "★" : "☆";
+      star.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        togglePin(e.path);
+      });
+      card.appendChild(star);
+
+      const wrap = document.createElement("div");
+      if (e.isDirectory) {
+        wrap.className = "thumb-wrap thumb-wrap-folder";
+        wrap.textContent = "▣";
+        wrap.setAttribute("aria-hidden", "true");
+      } else {
+        wrap.className = "thumb-wrap";
+        const spin = document.createElement("div");
+        spin.className = "spinner";
+        wrap.appendChild(spin);
+        const img = document.createElement("img");
+        img.style.display = "none";
+        img.alt = e.name;
+        wrap.appendChild(img);
+        const cacheKey = e.path;
+        if (thumbCache.has(cacheKey)) {
+          spin.remove();
+          img.src = thumbCache.get(cacheKey);
+          img.style.display = "block";
+        } else {
+          wrap.dataset.thumbPath = e.path;
+          const io = ensureThumbViewportObserver();
+          if (io) io.observe(wrap);
+          else queueThumbJobForPath(e.path, img, spin, wrap);
+        }
+      }
+      card.appendChild(wrap);
+
+      const lab = document.createElement("div");
+      lab.className = "thumb-label";
+      lab.textContent = !e.isDirectory && e.label != null && e.label !== "" ? e.label : e.name;
+      lab.title = e.path || "";
+      card.appendChild(lab);
+
+      card.addEventListener("click", () => {
+        if (e.isDirectory) {
+          expanded.add(e.path);
+          if (!childCache.has(e.path)) {
+            ensureChildren(e.path).then(() => { selectFolder(e.path); });
+          } else {
+            selectFolder(e.path);
+          }
+          return;
+        }
+        selectThumbCardEl(card);
+        selectedFbxPath = e.path;
+        loadFbxInViewer(e.path);
+      });
+      parentEl.appendChild(card);
+    }
+
+    let thumbsRefreshGen = 0;
+    function refreshThumbs() {
+      const gen = ++thumbsRefreshGen;
+      clearAllThumbs();
+      if (thumbsPinnedSection) {
+        thumbsPinnedSection.style.display = "none";
+      }
+      if (!selectedFolder) {
+        thumbsEmpty.style.display = "block";
+        thumbsEmpty.textContent = "Select a folder to list FBX files.";
+        thumbsInner.style.display = "none";
+        return;
+      }
+      api.findFbxInDirectory(selectedFolder).then((fbxList) => {
+        if (gen !== thumbsRefreshGen) return;
+        const fbxEntries = fbxList.map((f) => ({
+          path: f.path,
+          name: f.name,
+          label: f.label,
+          isDirectory: false
+        }));
+
+        const mainEntries = fbxEntries.filter(
+          (e) => !pinnedSet.has(e.path) && entryMatchesFbxFilter(e)
+        );
+        const pinPathsFiltered = pinnedOrder.filter((p) => nameMatchesFilter(pathBasename(p)));
+
+        if (thumbsEmpty) {
+          if (fbxEntries.length === 0) {
+            if (pinPathsFiltered.length > 0) {
+              thumbsEmpty.style.display = "none";
+              thumbsEmpty.textContent = "";
+            } else {
+              thumbsEmpty.style.display = "block";
+              thumbsEmpty.textContent = "No .fbx files in this folder or its subfolders.";
+            }
+            thumbsInner.style.display = "none";
+          } else if (mainEntries.length === 0) {
+            const q = getFilterText();
+            if (q) {
+              const anyPin = pinPathsFiltered.length > 0;
+              thumbsEmpty.style.display = "block";
+              thumbsEmpty.textContent = anyPin
+                ? "No FBX match the filter. See Pinned above."
+                : "No items match the filter.";
+            } else {
+              const allPinnedHere = fbxEntries.length > 0 && fbxEntries.every((e) => pinnedSet.has(e.path));
+              thumbsEmpty.style.display = "block";
+              thumbsEmpty.textContent = allPinnedHere
+                ? "All .fbx in this folder are pinned. See Pinned above."
+                : "No items to show here.";
+            }
+            thumbsInner.style.display = "none";
+          } else {
+            thumbsEmpty.style.display = "none";
+            thumbsEmpty.textContent = "";
+            thumbsInner.style.display = "grid";
+          }
+        } else {
+          thumbsInner.style.display = mainEntries.length ? "grid" : "none";
+        }
+
+        if (mainEntries.length) {
+          mainEntries.forEach((e) => { appendThumbCard(thumbsInner, e); });
+        }
+
+        if (pinPathsFiltered.length && thumbsPinned) {
+          Promise.all(
+            pinPathsFiltered.map((p) =>
+              api.statPath(p).then((st) => ({
+                path: p,
+                name: pathBasename(p),
+                isDirectory: !!(st && st.isDirectory)
+              }))
+            )
+          )
+            .then((entries) => {
+              if (gen !== thumbsRefreshGen) return;
+              entries.forEach((ent) => { appendThumbCard(thumbsPinned, ent); });
+              if (thumbsPinnedSection) thumbsPinnedSection.style.display = "block";
+            })
+            .catch(() => {
+              if (gen !== thumbsRefreshGen) return;
+              pinPathsFiltered.forEach((p) => {
+                appendThumbCard(thumbsPinned, { path: p, name: pathBasename(p), isDirectory: false });
+              });
+              if (thumbsPinnedSection) thumbsPinnedSection.style.display = "block";
+            });
+        } else {
+          if (thumbsPinned) thumbsPinned.innerHTML = "";
+        }
+      })
+        .catch((err) => {
+          if (gen !== thumbsRefreshGen) return;
+          if (thumbsPinnedSection) {
+            thumbsPinnedSection.style.display = "none";
+          }
+          if (thumbsEmpty) {
+            thumbsEmpty.style.display = "block";
+            thumbsEmpty.textContent = "Could not read folder: " + (err && err.message ? err.message : String(err));
+          }
+          thumbsInner.style.display = "none";
+        });
+    }
+
+    /** 3D viewport: warm neutral, separate from the dark file UI. */
+    function getViewerPalette() {
+      return {
+        clear: 0x6a6762,
+        hemiSky: 0xc9c4bc,
+        hemiGround: 0x6e6a64,
+        dir2: 0xa89878
+      };
+    }
+
+    function finishBackdropTexture(tex, THREE) {
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      tex.generateMipmaps = false;
+      tex.wrapS = THREE.ClampToEdgeWrapping;
+      tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.encoding = THREE.sRGBEncoding;
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function makeSoftGradientBackground(THREE) {
+      const w = 4;
+      const h = 2048;
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      const lin = ctx.createLinearGradient(0, 0, 0, h);
+      lin.addColorStop(0, "#b0aaa4");
+      lin.addColorStop(0.2, "#9a958e");
+      lin.addColorStop(0.45, "#8a857e");
+      lin.addColorStop(0.7, "#6f6a64");
+      lin.addColorStop(1, "#5a5652");
+      ctx.fillStyle = lin;
+      ctx.fillRect(0, 0, w, h);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.name = "softGradientBg";
+      return finishBackdropTexture(tex, THREE);
+    }
+
+    function initRenderer(mods) {
+      const { THREE, FBXLoader, OrbitControls } = mods;
+      function fitObjectToView(camera, controls, object, margin = 1.35) {
+        const box = new THREE.Box3().setFromObject(object);
+        if (box.isEmpty()) {
+          camera.near = 0.1;
+          camera.far = 10000;
+          camera.position.set(2, 2, 5);
+          camera.updateProjectionMatrix();
+          controls.target.set(0, 0, 0);
+          controls.update();
+          return;
+        }
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const maxDim = Math.max(size.x, size.y, size.z, 0.001);
+        const fov = (camera.fov * Math.PI) / 180;
+        const dist = (maxDim / 2 / Math.tan(fov / 2)) * margin;
+        const dir = new THREE.Vector3(0.6, 0.45, 1).normalize();
+        camera.position.copy(center).add(dir.multiplyScalar(dist));
+        const near = maxDim * 0.01;
+        const far = maxDim * 200;
+        camera.near = near;
+        camera.far = far;
+        camera.updateProjectionMatrix();
+        controls.target.copy(center);
+        controls.update();
+      }
+      const canvas = document.getElementById("viewer");
+      const btnFocus = document.getElementById("btnFocus");
+      const btnWire = document.getElementById("btnWire");
+      const animBar = document.getElementById("animBar");
+      const btnPlay = document.getElementById("btnPlay");
+      const btnPause = document.getElementById("btnPause");
+      const btnLighting = document.getElementById("btnLighting");
+      const lightIntensityEl = document.getElementById("lightIntensity");
+      const lightIntensityValueEl = document.getElementById("lightIntensityValue");
+      const lightPointsEl = document.getElementById("lightPoints");
+      const lightWarmthEl = document.getElementById("lightWarmth");
+      const btnModelStats = document.getElementById("btnModelStats");
+      const modelStatsOverlay = document.getElementById("modelStatsOverlay");
+      const modelStatSize = document.getElementById("modelStatSize");
+      const modelStatTris = document.getElementById("modelStatTris");
+      const modelStatVerts = document.getElementById("modelStatVerts");
+
+      let vScene, vCamera, vRenderer, vControls, vModelRoot;
+      let vMixer;
+      let vMainAction = null;
+      const clock = new THREE.Clock();
+      let wireState = false;
+      const loaderView = new FBXLoader();
+      const pal0 = getViewerPalette();
+      vScene = new THREE.Scene();
+      vCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000);
+      vCamera.position.set(2, 2, 5);
+      vRenderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+      vRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      vScene.background = makeSoftGradientBackground(THREE);
+      vRenderer.setClearColor(pal0.clear, 1);
+      vControls = new OrbitControls(vCamera, vRenderer.domElement);
+      vControls.enableDamping = true;
+      vControls.dampingFactor = 0.05;
+      vControls.mouseButtons = {
+        LEFT: THREE.MOUSE.ROTATE,
+        MIDDLE: THREE.MOUSE.DOLLY,
+        RIGHT: THREE.MOUSE.PAN
+      };
+      const hLight = new THREE.HemisphereLight(pal0.hemiSky, pal0.hemiGround, 0.55);
+      vScene.add(hLight);
+      const d1 = new THREE.DirectionalLight(0xffffff, 0.55);
+      d1.position.set(5, 8, 4);
+      vScene.add(d1);
+      const d2 = new THREE.DirectionalLight(pal0.dir2, 0.12);
+      d2.position.set(-3, 2, -2);
+      vScene.add(d2);
+      const d3 = new THREE.DirectionalLight(pal0.dir2, 0.1);
+      d3.position.set(-4, 7, -5);
+      vScene.add(d3);
+      const fillAmbient = new THREE.AmbientLight(0xffffff, 0);
+      vScene.add(fillAmbient);
+      let sceneLightingOn = true;
+      let lightIntensityPercent = 100;
+      let lightPointsPreset = "standard";
+      let lightWarmth = "neutral";
+      try {
+        if (localStorage.getItem(SCENE_LIGHTS_KEY) === "0") sceneLightingOn = false;
+      } catch (_) { /* ignore */ }
+      try {
+        const ip = parseInt(localStorage.getItem(SCENE_LIGHT_INTENSITY_KEY), 10);
+        if (!Number.isNaN(ip) && ip >= 25 && ip <= 200) lightIntensityPercent = ip;
+      } catch (_) { /* ignore */ }
+      try {
+        const lp = localStorage.getItem(SCENE_LIGHT_POINTS_KEY);
+        if (lp === "minimal" || lp === "standard" || lp === "full") lightPointsPreset = lp;
+      } catch (_) { /* ignore */ }
+      try {
+        const lw = localStorage.getItem(SCENE_LIGHT_WARMTH_KEY);
+        if (lw === "cool" || lw === "neutral" || lw === "warm") lightWarmth = lw;
+      } catch (_) { /* ignore */ }
+      function syncLightUiFromState() {
+        if (lightIntensityEl) lightIntensityEl.value = String(lightIntensityPercent);
+        if (lightIntensityValueEl) lightIntensityValueEl.textContent = lightIntensityPercent + "%";
+        if (lightPointsEl) lightPointsEl.value = lightPointsPreset;
+        if (lightWarmthEl) lightWarmthEl.value = lightWarmth;
+      }
+      function directionalCountForPreset(preset) {
+        if (preset === "minimal") return 1;
+        if (preset === "full") return 3;
+        return 2;
+      }
+      function applyViewerLights() {
+        const mul = lightIntensityPercent / 100;
+        const warmth = LIGHT_WARMTH_PALETTES[lightWarmth] || LIGHT_WARMTH_PALETTES.neutral;
+        hLight.color.setHex(warmth.hemiSky);
+        hLight.groundColor.setHex(warmth.hemiGround);
+        hLight.intensity = 0.55 * mul;
+        d1.color.setHex(0xffffff);
+        d1.intensity = 0.55 * mul;
+        d2.color.setHex(warmth.fill);
+        d2.intensity = 0.12 * mul;
+        d3.color.setHex(warmth.rim);
+        d3.intensity = 0.1 * mul;
+        const nDir = directionalCountForPreset(lightPointsPreset);
+        const on = sceneLightingOn;
+        hLight.visible = on;
+        d1.visible = on && nDir >= 1;
+        d2.visible = on && nDir >= 2;
+        d3.visible = on && nDir >= 3;
+        if (on) {
+          fillAmbient.intensity = 0;
+        } else {
+          const ambTint = AMBIENT_ONLY_TINT[lightWarmth] ?? AMBIENT_ONLY_TINT.neutral;
+          fillAmbient.color.setHex(ambTint);
+          fillAmbient.intensity = 0.36 * mul;
+        }
+      }
+      function setSceneLighting(on) {
+        sceneLightingOn = on;
+        if (btnLighting) {
+          btnLighting.setAttribute("aria-pressed", on ? "true" : "false");
+          btnLighting.textContent = on ? "Scene lights" : "Ambient only";
+          btnLighting.title = on
+            ? "Switch to flat ambient lighting (no directional / hemisphere)"
+            : "Switch to full scene lighting";
+        }
+        try { localStorage.setItem(SCENE_LIGHTS_KEY, on ? "1" : "0"); } catch (_) { /* ignore */ }
+        applyViewerLights();
+      }
+      syncLightUiFromState();
+      applyViewerLights();
+      if (btnLighting) {
+        btnLighting.addEventListener("click", () => {
+          setSceneLighting(!sceneLightingOn);
+        });
+      }
+      if (lightIntensityEl && lightIntensityValueEl) {
+        lightIntensityEl.addEventListener("input", () => {
+          const v = lightIntensityEl.valueAsNumber || parseInt(lightIntensityEl.value, 10);
+          lightIntensityPercent = Math.max(25, Math.min(200, Number.isNaN(v) ? 100 : v));
+          lightIntensityValueEl.textContent = lightIntensityPercent + "%";
+          try { localStorage.setItem(SCENE_LIGHT_INTENSITY_KEY, String(lightIntensityPercent)); } catch (_) { /* ignore */ }
+          applyViewerLights();
+        });
+      }
+      if (lightPointsEl) {
+        lightPointsEl.addEventListener("change", () => {
+          const v = lightPointsEl.value;
+          lightPointsPreset = v === "minimal" || v === "full" ? v : "standard";
+          try { localStorage.setItem(SCENE_LIGHT_POINTS_KEY, lightPointsPreset); } catch (_) { /* ignore */ }
+          applyViewerLights();
+        });
+      }
+      if (lightWarmthEl) {
+        lightWarmthEl.addEventListener("change", () => {
+          const v = lightWarmthEl.value;
+          lightWarmth = v === "cool" || v === "warm" ? v : "neutral";
+          try { localStorage.setItem(SCENE_LIGHT_WARMTH_KEY, lightWarmth); } catch (_) { /* ignore */ }
+          applyViewerLights();
+        });
+      }
+      let modelStatsVisible = false;
+      try {
+        if (localStorage.getItem(MODEL_STATS_VIS_KEY) === "1") modelStatsVisible = true;
+      } catch (_) { /* ignore */ }
+      function resetModelStatsTexts() {
+        if (modelStatSize) modelStatSize.textContent = "—";
+        if (modelStatTris) modelStatTris.textContent = "—";
+        if (modelStatVerts) modelStatVerts.textContent = "—";
+      }
+      function updateModelStatsPanel(object) {
+        if (!object) {
+          resetModelStatsTexts();
+          return;
+        }
+        const box = new THREE.Box3().setFromObject(object);
+        const size = new THREE.Vector3();
+        if (box.isEmpty()) {
+          resetModelStatsTexts();
+          return;
+        }
+        box.getSize(size);
+        const g = countMeshGeometryStats(object);
+        if (modelStatSize) {
+          modelStatSize.textContent =
+            size.x.toFixed(2) + " × " + size.z.toFixed(2) + " × " + size.y.toFixed(2) + " m (W×D×H)";
+        }
+        if (modelStatTris) modelStatTris.textContent = g.triangles.toLocaleString();
+        if (modelStatVerts) modelStatVerts.textContent = g.vertices.toLocaleString();
+      }
+      function applyModelStatsVisibility() {
+        if (!modelStatsOverlay || !btnModelStats) return;
+        const hasModel = !!vModelRoot;
+        btnModelStats.disabled = !hasModel;
+        modelStatsOverlay.hidden = !modelStatsVisible || !hasModel;
+        btnModelStats.setAttribute("aria-pressed", modelStatsVisible ? "true" : "false");
+      }
+      applyModelStatsVisibility();
+      if (btnModelStats) {
+        btnModelStats.addEventListener("click", () => {
+          if (!vModelRoot) return;
+          modelStatsVisible = !modelStatsVisible;
+          try {
+            localStorage.setItem(MODEL_STATS_VIS_KEY, modelStatsVisible ? "1" : "0");
+          } catch (_) { /* ignore */ }
+          applyModelStatsVisibility();
+        });
+      }
+      function resizeViewer() {
+        const wrap = canvas.parentElement;
+        if (!wrap) return;
+        const w = wrap.clientWidth;
+        const h = wrap.clientHeight;
+        vCamera.aspect = w / Math.max(1, h);
+        vCamera.updateProjectionMatrix();
+        vRenderer.setSize(w, h, false);
+      }
+      window.__viewerOnResize = resizeViewer;
+      window.addEventListener("resize", resizeViewer);
+      setTimeout(resizeViewer, 0);
+      function animate() {
+        requestAnimationFrame(animate);
+        const d = clock.getDelta();
+        if (vMixer) vMixer.update(d);
+        vControls.update();
+        vRenderer.render(vScene, vCamera);
+      }
+      animate();
+      function clearModel() {
+        vMainAction = null;
+        if (vMixer) {
+          vMixer.stopAllAction();
+          vMixer = null;
+        }
+        if (vModelRoot) {
+          vScene.remove(vModelRoot);
+          vModelRoot.traverse((o) => {
+            if (o.geometry) o.geometry.dispose();
+            if (o.material) {
+              const m = o.material;
+              if (Array.isArray(m)) m.forEach((x) => x.dispose && x.dispose());
+              else m.dispose && m.dispose();
+            }
+          });
+          vModelRoot = null;
+        }
+        resetModelStatsTexts();
+        applyModelStatsVisibility();
+      }
+      loadFbxInViewer = function (fbxPath) {
+        clearModel();
+        btnPlay.disabled = true;
+        btnPause.disabled = true;
+        animBar.hidden = true;
+        api.readFile(fbxPath)
+          .then((raw) => {
+            const ab = toArrayBuffer(raw);
+            const m = loaderView.parse(ab, resourceDirFor(fbxPath));
+            vModelRoot = m;
+            vScene.add(m);
+            m.traverse((o) => {
+              if (o.isMesh && o.material) {
+                if (Array.isArray(o.material)) o.material = o.material.map((x) => (x.clone && x.clone()) || x);
+                else o.material = o.material.clone();
+              }
+            });
+            fitObjectToView(vCamera, vControls, m, 1.45);
+            btnFocus.disabled = false;
+            btnWire.disabled = false;
+            wireState = false;
+            applyWireframe(false);
+            if (m.animations && m.animations.length) {
+              vMixer = new THREE.AnimationMixer(m);
+              vMainAction = vMixer.clipAction(m.animations[0]);
+              vMainAction.reset();
+              vMainAction.play();
+              animBar.hidden = false;
+              btnPlay.disabled = false;
+              btnPause.disabled = false;
+            } else {
+              vMixer = null;
+              vMainAction = null;
+            }
+            updateModelStatsPanel(m);
+            applyModelStatsVisibility();
+          })
+          .catch(() => { clearModel(); });
+      };
+      function applyWireframe(on) {
+        if (!vModelRoot) return;
+        vModelRoot.traverse((o) => {
+          if (o.isMesh && o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach((mat) => {
+              if (mat) mat.wireframe = on;
+            });
+          }
+        });
+      }
+      btnFocus.addEventListener("click", () => {
+        if (vModelRoot) fitObjectToView(vCamera, vControls, vModelRoot, 1.45);
+      });
+      btnWire.addEventListener("click", () => {
+        wireState = !wireState;
+        applyWireframe(wireState);
+      });
+      btnPlay.addEventListener("click", () => {
+        if (!vMainAction) return;
+        vMainAction.paused = false;
+        vMainAction.play();
+      });
+      btnPause.addEventListener("click", () => {
+        if (vMainAction) vMainAction.paused = true;
+      });
+    }
+
+    function applyPickedTreeRoot(p) {
+      const abs = String(p).replace(/[\\/]+$/, "");
+      treeRootPath = abs;
+      treeRootLabel = pathBasename(abs);
+      childCache.clear();
+      expanded.clear();
+      expanded.add(treeRootPath);
+      return ensureChildren(treeRootPath);
+    }
+
+    async function tryRestoreLastSession() {
+      let raw;
+      try {
+        raw = localStorage.getItem(SESSION_KEY);
+      } catch (_) {
+        return false;
+      }
+      if (!raw) return false;
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch (_) {
+        return false;
+      }
+      const root = data && data.root ? String(data.root) : "";
+      if (!root) return false;
+      const st = await api.statPath(root);
+      if (!st || !st.isDirectory) {
+        try { localStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
+        return false;
+      }
+      try {
+        await applyPickedTreeRoot(root);
+      } catch (_) {
+        return false;
+      }
+      expanded.clear();
+      const exp = Array.isArray(data.expanded) ? data.expanded : [];
+      exp.forEach((p) => {
+        if (typeof p === "string" && p && isPathUnderOrEqual(root, p)) {
+          expanded.add(p);
+        }
+      });
+      expanded.add(treeRootPath);
+      let sel =
+        data.selected && isPathUnderOrEqual(root, String(data.selected))
+          ? String(data.selected)
+          : root;
+      const stSel = await api.statPath(sel);
+      if (!stSel || !stSel.isDirectory) sel = root;
+      ensureExpandedForPath(sel, root);
+      expanded.add(treeRootPath);
+      selectFolder(sel);
+      return true;
+    }
+
+    if (thumbsSearch) {
+      thumbsSearch.addEventListener("input", () => { refreshThumbs(); });
+    }
+
+    document.getElementById("btnPickFolder").addEventListener("click", async () => {
+      const p = await api.pickFolder();
+      if (p) {
+        try {
+          await applyPickedTreeRoot(p);
+        } catch (err) {
+          treePathHintEl.textContent = "Failed to read folder: " + (err && err.message ? err.message : String(err));
+          return;
+        }
+        selectFolder(treeRootPath);
+      }
+    });
+    if (typeof window.readDir !== "function") {
+      treePathHintEl.textContent = "Not running in Electron (preload API missing). Start with: npm start";
+    } else {
+      (async () => {
+        const ok = await tryRestoreLastSession();
+        if (!ok) initEmptyBrowser();
+      })();
+    }
+    getThree()
+      .then((mods) => { initRenderer(mods); })
+      .catch((err) => { console.error("Three.js failed to load:", err); });
+  </script>
+</body>
+</html>
