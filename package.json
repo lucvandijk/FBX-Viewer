@@ -1,6 +1,6 @@
 {
   "name": "fbx-viewer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "FBX Viewer – Electron 3D preview and favorites",
   "author": "Lucvd",
   "main": "main.js",
@@ -16,7 +16,7 @@
   "build": {
     "appId": "com.fbxviewer.app",
     "productName": "FBX Viewer",
-    "icon": "images/logo.png",
+    "icon": "images/logo.png",   
     "forceCodeSigning": false,
     "directories": {
       "output": "release"

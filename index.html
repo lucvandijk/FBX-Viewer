@@ -323,6 +323,24 @@
       margin-top: 10px;
       text-align: center;
     }
+    .thumbs-search-row {
+      display: flex;
+      align-items: stretch;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .thumbs-search-row .thumbs-search {
+      flex: 1;
+      min-width: 0;
+      margin-top: 0;
+    }
+    .btn-pin-visible {
+      flex: 0 0 auto;
+      align-self: center;
+      white-space: nowrap;
+      font-size: 10px;
+      padding: 6px 8px;
+    }
     .thumbs-search {
       width: 100%;
       margin-top: 8px;
@@ -418,9 +436,13 @@
     }
     .thumbs-export-row {
       margin-top: 8px;
+      display: flex;
+      gap: 8px;
+      align-items: stretch;
     }
     .thumbs-export-row .btn {
-      width: 100%;
+      flex: 1;
+      min-width: 0;
       font-size: 11px;
     }
   </style>
@@ -442,14 +464,18 @@
     <section class="col-thumbs" data-col="thumbs">
       <div class="panel-head">
         <h1 class="title" style="font-size: 13px;">Thumbnails</h1>
-        <label class="sr-only" for="thumbsSearch">Filter files and folders</label>
-        <input type="search" class="thumbs-search" id="thumbsSearch" placeholder="Filter by name…" autocomplete="off" />
+        <div class="thumbs-search-row">
+          <label class="sr-only" for="thumbsSearch">Filter files and folders</label>
+          <input type="search" class="thumbs-search" id="thumbsSearch" placeholder="Filter by name…" autocomplete="off" />
+          <button type="button" class="btn btn-pin-visible" id="btnPinVisible" disabled title="Pin every .fbx currently listed below (matches the filter; skips items already pinned)">Pin all visible</button>
+        </div>
         <div class="thumbs-size-row">
           <label for="thumbsTileSize">Tile size</label>
           <input type="range" id="thumbsTileSize" min="72" max="240" step="4" value="110" title="Thumbnail tile minimum width" />
         </div>
         <div class="thumbs-export-row">
           <button type="button" class="btn" id="btnExportPinned" disabled title="Save all pinned .fbx files into one ZIP for your game or engine">Export pinned to ZIP…</button>
+          <button type="button" class="btn" id="btnUnpinAll" disabled title="Remove every pinned model from favorites">Unpin all</button>
         </div>
         <div class="panel-sub path-like" id="thumbsPathLabel">—</div>
       </div>
@@ -910,6 +936,30 @@
       updateExportPinnedButton();
       refreshThumbs();
     }
+    function addPinsBulk(paths) {
+      const list = Array.isArray(paths) ? paths : [];
+      let added = 0;
+      for (const fullPath of list) {
+        if (!pinnedSet.has(fullPath)) {
+          pinnedOrder.push(fullPath);
+          pinnedSet.add(fullPath);
+          added++;
+        }
+      }
+      if (added === 0) return 0;
+      persistPins();
+      updateExportPinnedButton();
+      refreshThumbs();
+      return added;
+    }
+    function clearAllPins() {
+      if (pinnedOrder.length === 0) return;
+      pinnedOrder = [];
+      pinnedSet.clear();
+      persistPins();
+      updateExportPinnedButton();
+      refreshThumbs();
+    }
 
     const treeRootEl = document.getElementById("treeRoot");
     const treePathHintEl = document.getElementById("treePathHint");
@@ -921,9 +971,19 @@
     const thumbsPinned = document.getElementById("thumbsPinned");
     const thumbsTileSize = document.getElementById("thumbsTileSize");
     const btnExportPinned = document.getElementById("btnExportPinned");
+    const btnUnpinAll = document.getElementById("btnUnpinAll");
+    const btnPinVisible = document.getElementById("btnPinVisible");
     const appEl = document.getElementById("app");
+    let lastVisibleUnpinnedPaths = [];
     function updateExportPinnedButton() {
-      if (btnExportPinned) btnExportPinned.disabled = pinnedOrder.length === 0;
+      const empty = pinnedOrder.length === 0;
+      if (btnExportPinned) btnExportPinned.disabled = empty;
+      if (btnUnpinAll) btnUnpinAll.disabled = empty;
+    }
+    function updatePinVisibleButton() {
+      if (btnPinVisible) {
+        btnPinVisible.disabled = !selectedFolder || lastVisibleUnpinnedPaths.length === 0;
+      }
     }
     const THUMB_TILE_KEY = "fbxViewerThumbGridMinV1";
     function applyThumbTileMin(px) {
@@ -975,6 +1035,15 @@
           updateExportPinnedButton();
         }
       });
+    }
+    if (btnPinVisible) {
+      btnPinVisible.addEventListener("click", () => {
+        if (lastVisibleUnpinnedPaths.length === 0) return;
+        addPinsBulk(lastVisibleUnpinnedPaths.slice());
+      });
+    }
+    if (btnUnpinAll) {
+      btnUnpinAll.addEventListener("click", () => { clearAllPins(); });
     }
     let selectedFbxPath = null;
 
@@ -1196,6 +1265,8 @@
     function refreshThumbs() {
       const gen = ++thumbsRefreshGen;
       clearAllThumbs();
+      lastVisibleUnpinnedPaths = [];
+      updatePinVisibleButton();
       if (thumbsPinnedSection) {
         thumbsPinnedSection.style.display = "none";
       }
@@ -1217,6 +1288,8 @@
         const mainEntries = fbxEntries.filter(
           (e) => !pinnedSet.has(e.path) && entryMatchesFbxFilter(e)
         );
+        lastVisibleUnpinnedPaths = mainEntries.map((e) => e.path);
+        updatePinVisibleButton();
         const pinPathsFiltered = pinnedOrder.filter((p) => nameMatchesFilter(pathBasename(p)));
 
         if (thumbsEmpty) {
@@ -1294,6 +1367,8 @@
             thumbsEmpty.textContent = "Could not read folder: " + (err && err.message ? err.message : String(err));
           }
           thumbsInner.style.display = "none";
+          lastVisibleUnpinnedPaths = [];
+          updatePinVisibleButton();
         });
     }
 
